@@ -1,0 +1,6 @@
+[submodule "MineDojo"]
+	path = MineDojo
+	url = https://github.com/MineDojo/MineDojo
+[submodule "MixinGradle-dcfaf61"]
+	path = MixinGradle-dcfaf61
+	url = https://github.com/verityw/MixinGradle-dcfaf61
