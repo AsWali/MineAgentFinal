@@ -1,4 +1,10 @@
 import numpy as np
+import pdb
+import math
+import torch
+import torch.optim as optim
+from mineclip.mineagent.actor.distribution import Categorical
+from mineclip.mineagent.batch import Batch
 
 class RunningBufferStats:
     def __init__(self):
@@ -31,8 +37,15 @@ class SelfImitationLearning:
     self.gamma = 0.99
     self.running_stats = RunningBufferStats()
     self.si_threshold = si_threshold
+    self.sil_anneal_lr = True
+    self.currrent_update = 0
+    self.sil_learning_rate = pow(10,-4)
+    self.sil_n_update = 10
+    self.sil_max_grad_norm = 10
 
   def add_episode_to_buffer(self, success):
+    print(success)
+    print(type(success))
     self.buffer.append((self.episode[0][2], success, self.episode))
     self.running_stats.update(self.episode[0][2])
 
@@ -41,7 +54,6 @@ class SelfImitationLearning:
       self.buffer.pop(0)
 
   def step(self, state, action, reward, done, success):
-    breakpoint()
     self.episode.append((state, action, reward))
     if done:
       episodic_returns = self.discounted_rewards([r for _, _, r in self.episode], self.gamma)      
@@ -90,3 +102,31 @@ class SelfImitationLearning:
       discounted_reward = reward + gamma * discounted_reward
       discounted_rewards.insert(0, discounted_reward)
     return discounted_rewards
+
+  def cosine_annealing_lr(self, eta_min, eta_max, T_max, T_cur):
+    cos_factor = math.cos(math.pi * T_cur / T_max)
+    return eta_min + 0.5 * (eta_max - eta_min) * (1 + cos_factor)
+
+  def train_sil_model(self, agent):
+    if self.sil_anneal_lr:
+      self.currrent_update += 1
+      optimizer = optim.Adam(agent.actor.parameters(), lr=self.sil_learning_rate, eps=1e-5)
+      optimizer.param_groups[0]["lr"] = self.cosine_annealing_lr(pow(10, -6), self.sil_learning_rate, self.sil_n_update, min(self.sil_n_update, self.currrent_update))
+
+    imitation_loss = torch.tensor(0.0, requires_grad=True)
+    for n in range(self.sil_n_update):
+        for sample in range(1):
+            print("Epoch and sample", n, sample)
+            returns, success, episode = self.sample()
+            obs, actions, reward = zip(*episode)
+            if obs is not None:
+                hidden, _ = agent.network(Batch.stack(obs).obs)
+                logits = agent.actor(hidden)
+                probs = Categorical(logits=logits)
+                actions = torch.tensor(actions, dtype=torch.long).to('mps')
+                imitation_loss = imitation_loss + probs.imitation_loss(actions)
+
+    imitation_loss.backward()
+    torch.nn.utils.clip_grad_norm_(self.network.actor.parameters(), self.sil_max_grad_norm)
+
+    return imitation_loss

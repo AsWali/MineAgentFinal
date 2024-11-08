@@ -42,7 +42,7 @@ def parse_args():
     # Algorithm specific arguments
     parser.add_argument("--num-envs", type=int, default=2,
         help="the number of parallel game environments")
-    parser.add_argument("--num-steps", type=int, default=512, # This multiplied by environment needs to equal 100k
+    parser.add_argument("--num-steps", type=int, default=30, # This multiplied by environment needs to equal 100k
         help="the number of steps to run in each environment per policy rollout")
     parser.add_argument("--anneal-lr", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="Toggle learning rate annealing for policy and value networks")
@@ -114,7 +114,8 @@ def main(cfg):
     rewards = torch.zeros((args.num_steps, args.num_envs)).to(device)
     dones = torch.zeros((args.num_steps, args.num_envs)).to(device)
     values = torch.zeros((args.num_steps, args.num_envs)).to(device)
-
+    
+    sil_modules = [SelfImitationLearning(buffer_size=50, si_threshold=2) for _ in range(args.num_envs)]
     # TRY NOT TO MODIFY: start the game
     global_step = 0
     start_time = time.time()
@@ -153,6 +154,8 @@ def main(cfg):
             next_done = torch.Tensor(done).to(device)
             unflattened_obs = np.array([{k: next_obs[k][i] for k in next_obs.keys()} for i in range(args.num_envs)])
             next_obs = preprocess_obs(unflattened_obs, info, action)
+            for i in range(args.num_envs):
+                sil_modules[i].step(next_obs[i], action[i], reward[i], next_done[i], [item['success'] for item in info][i])
 
         print("Update: ", update)
         # bootstrap value if not done
@@ -246,6 +249,10 @@ def main(cfg):
         writer.add_scalar("losses/explained_variance", explained_var, global_step)
         print("SPS:", int(global_step / (time.time() - start_time)))
         writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+
+        # Assuming `sil_modules` is the array of SelfImitationLearning instances
+        total_imitation_loss = sum(sil_module.train_sil_model(agent) for sil_module in sil_modules)
+        writer.add_scalar("si/imitation_loss", total_imitation_loss.item(), global_step)
 
     env.close()
     writer.close()
