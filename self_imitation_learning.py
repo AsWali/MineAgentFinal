@@ -44,8 +44,6 @@ class SelfImitationLearning:
     self.sil_max_grad_norm = 10
 
   def add_episode_to_buffer(self, success):
-    print(success)
-    print(type(success))
     self.buffer.append((self.episode[0][2], success, self.episode))
     self.running_stats.update(self.episode[0][2])
 
@@ -117,6 +115,8 @@ class SelfImitationLearning:
     for n in range(self.sil_n_update):
         for sample in range(1):
             print("Epoch and sample", n, sample)
+            if self.buffered_items() == 0:
+               continue
             returns, success, episode = self.sample()
             obs, actions, reward = zip(*episode)
             if obs is not None:
@@ -127,6 +127,6 @@ class SelfImitationLearning:
                 imitation_loss = imitation_loss + probs.imitation_loss(actions)
 
     imitation_loss.backward()
-    torch.nn.utils.clip_grad_norm_(self.network.actor.parameters(), self.sil_max_grad_norm)
+    torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), self.sil_max_grad_norm)
 
     return imitation_loss
