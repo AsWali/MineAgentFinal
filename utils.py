@@ -4,7 +4,7 @@ from itertools import product
 import numpy as np
 from mineclip.mineagent.features.voxel.flattened_voxel_block import VOXEL_BLOCK_NAME_MAP
 
-device = torch.device("mps")
+device = torch.device("cuda")
 block_type_to_index = {}
 index_counter = 1
 

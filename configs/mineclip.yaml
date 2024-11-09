@@ -6,5 +6,5 @@ mlp_adapter_spec: "v0-2.t0"
 resolution: [160, 256]
 
 ckpt:
-  path: "/Users/asrorwali/Documents/MineAgent/weights/attn.pth"  # filled by users
+  path: "/home/ubuntu/MineAgentFinal/weights/attn.pth"  # filled by users
   checksum: "b5ece9198337cfd117a3bfbd921e56da"

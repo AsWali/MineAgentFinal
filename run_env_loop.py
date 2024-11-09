@@ -40,9 +40,9 @@ def parse_args():
         help="if toggled, `torch.backends.cudnn.deterministic=False`")
 
     # Algorithm specific arguments
-    parser.add_argument("--num-envs", type=int, default=2,
+    parser.add_argument("--num-envs", type=int, default=4,
         help="the number of parallel game environments")
-    parser.add_argument("--num-steps", type=int, default=30, # This multiplied by environment needs to equal 100k
+    parser.add_argument("--num-steps", type=int, default=25000, # This multiplied by environment needs to equal 100k
         help="the number of steps to run in each environment per policy rollout")
     parser.add_argument("--anneal-lr", type=lambda x: bool(strtobool(x)), default=True, nargs="?", const=True,
         help="Toggle learning rate annealing for policy and value networks")
@@ -99,10 +99,10 @@ def main(cfg):
     torch.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = args.torch_deterministic
 
-    device = torch.device("mps")
+    device = torch.device("cuda")
 
     env = SubprocVecEnv([make_env(i, f"runs/{run_name}") for i in range(args.num_envs)])
-    env = MineClipWrapper(env, ['milk a cow', 'milk a cow'], args.num_envs, device=device)
+    env = MineClipWrapper(env, ['milk a cow', 'milk a cow', 'milk a cow', 'milk a cow'], args.num_envs, device=device)
     agent = MineAgent(cfg, device=device).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
     
@@ -127,6 +127,8 @@ def main(cfg):
 
     num_updates = args.total_timesteps // args.batch_size
     scheduler = CosineAnnealingLR(optimizer, num_updates, eta_min=args.cos_decay_min_learning_rate)
+    frame_buffer = []
+    SAVE_GIF = False
     for update in range(1, num_updates + 1):
         # Annealing the rate if instructed to do so.
         if args.anneal_lr and update > 1:
@@ -134,7 +136,11 @@ def main(cfg):
             print(f"Annealing the learning rate: {scheduler.get_last_lr()[0]}")
 
         for step in range(0, args.num_steps):
-            print(step)
+            if global_step > 0 and global_step % 25600 == 0:
+                SAVE_GIF = True
+            elif SAVE_GIF and global_step % 25600 > 400:
+                SAVE_GIF = False
+
             global_step += 1 * args.num_envs
             obs[step] = next_obs
             dones[step] = next_done
@@ -149,6 +155,12 @@ def main(cfg):
             # TRY NOT TO MODIFY: execute the game and log data.
             transformed_action = [transform_action(act.item()) for act in action]
             next_obs, reward, done, info = env.step(transformed_action)
+            if SAVE_GIF:
+                frame_buffer.append(next_obs["rgb"])
+            if len(frame_buffer) == 100:
+                writer.add_video("video", np.array(np.transpose(np.array(frame_buffer), (1, 0, 2, 3, 4))), fps=4, global_step=global_step)
+                frame_buffer = []
+
             rewards[step] = torch.tensor(reward, dtype=torch.float32).to(device).view(-1)
 
             next_done = torch.Tensor(done).to(device)
@@ -252,7 +264,7 @@ def main(cfg):
 
         # Assuming `sil_modules` is the array of SelfImitationLearning instances
         total_imitation_loss = sum(sil_module.train_sil_model(agent) for sil_module in sil_modules)
-        writer.add_scalar("si/imitation_loss", total_imitation_loss.item(), global_step)
+        writer.add_scalar("si/imitation_loss", total_imitation_loss, global_step)
 
     env.close()
     writer.close()

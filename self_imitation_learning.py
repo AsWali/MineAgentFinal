@@ -110,23 +110,33 @@ class SelfImitationLearning:
       self.currrent_update += 1
       optimizer = optim.Adam(agent.actor.parameters(), lr=self.sil_learning_rate, eps=1e-5)
       optimizer.param_groups[0]["lr"] = self.cosine_annealing_lr(pow(10, -6), self.sil_learning_rate, self.sil_n_update, min(self.sil_n_update, self.currrent_update))
+    
+    all_losses = []  # List to store all imitation losses
 
-    imitation_loss = torch.tensor(0.0, requires_grad=True)
     for n in range(self.sil_n_update):
+        imitation_loss = torch.tensor(0.0, requires_grad=True)  # Reset the loss at the start of each update
         for sample in range(1):
             print("Epoch and sample", n, sample)
             if self.buffered_items() == 0:
-               continue
+                continue
             returns, success, episode = self.sample()
             obs, actions, reward = zip(*episode)
             if obs is not None:
                 hidden, _ = agent.network(Batch.stack(obs).obs)
                 logits = agent.actor(hidden)
                 probs = Categorical(logits=logits)
-                actions = torch.tensor(actions, dtype=torch.long).to('mps')
+                actions = torch.tensor(actions, dtype=torch.long).cuda()
                 imitation_loss = imitation_loss + probs.imitation_loss(actions)
 
-    imitation_loss.backward()
-    torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), self.sil_max_grad_norm)
+        # Store the imitation loss value
+        all_losses.append(imitation_loss.item())
 
-    return imitation_loss
+        # Perform backward pass and optimizer step for each update
+        imitation_loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()  # Reset gradients for the next iteration
+
+    torch.nn.utils.clip_grad_norm_(agent.actor.parameters(), self.sil_max_grad_norm)
+    # Calculate the average imitation loss
+    average_loss = sum(all_losses) / len(all_losses) if all_losses else 0.0
+    return average_loss

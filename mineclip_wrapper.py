@@ -13,7 +13,7 @@ class MineClipWrapper(Wrapper):
     self.prompts = prompts
     
     # Initialize MineClip
-    cfg = OmegaConf.load("/Users/asrorwali/Documents/MineAgent/configs/mineclip.yaml")
+    cfg = OmegaConf.load("/home/ubuntu/MineAgentFinal/configs/mineclip.yaml")
 
     OmegaConf.set_struct(cfg, False)
     ckpt = cfg.pop("ckpt")
